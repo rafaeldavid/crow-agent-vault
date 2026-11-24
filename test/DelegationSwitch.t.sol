@@ -160,6 +160,116 @@ contract DelegationSwitchTest is CrestBase {
         vm.prank(sub);
         vm.expectRevert(ICrestVault.NotAuthorized.selector);
         vault.setCaps(agentGrant, on, "");
+        assertFalse(vault.getGrant(agentGrant).caps.mayDelegate, "the switch is still off");
+    }
+
+    function test_attack_afterTheSwitch_aGrandchildVaultMadeBeforeIt_cannotDelegateOrBeHandedOver() public {
+        vm.prank(sub);
+        CrestVault child = CrestVault(vault.createChild(subGrant, 0, ""));
+        vm.prank(sub);
+        uint256 sub2InChild = child.grant(ROOT, sub2, _wide(), 0, "");
+        vm.prank(sub2);
+        CrestVault grandchild = CrestVault(child.createChild(sub2InChild, 0, ""));
+        vm.prank(sub2);
+        uint256 sub3InGrandchild = grandchild.grant(ROOT, sub3, _wide(), 0, "");
+        _switchOff();
+        vm.prank(sub2); // the grandchild's principal, at its root
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        grandchild.grant(ROOT, fresh, _wide(), 0, "");
+        vm.startPrank(sub3);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        grandchild.grant(sub3InGrandchild, fresh, _wide(), 0, "");
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        grandchild.createChild(sub3InGrandchild, 0, "");
+        vm.stopPrank();
+        vm.prank(sub2);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        child.fundChild(address(grandchild), 1, "");
+        vm.prank(sub);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        child.fundChild(address(grandchild), 1, "");
+        // A child vault's principal cannot hand the vault, or its money, to a new key.
+        vm.startPrank(sub2);
+        vm.expectRevert(ICrestVault.NotTopVault.selector);
+        grandchild.proposePrincipal(fresh, "");
+        vm.expectRevert(ICrestVault.NotTopVault.selector);
+        grandchild.withdraw(fresh, 0, "");
+        vm.stopPrank();
+    }
+
+    function test_attack_afterTheSwitch_aKeyHeldBelowIsMovedToANewGrant_refused() public {
+        _switchOff();
+        vm.startPrank(buyer);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.grant(agentGrant, sub3, _wide(), bytes32("move"), "");
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.grant(subGrant, sub3, _wide(), bytes32("move"), "");
+        vm.stopPrank();
+        assertEq(vault.grantOf(sub3), grandGrant, "the key keeps the grant it had");
+    }
+
+    function test_attack_afterTheSwitch_aCancelledSlipsRecord_givesItsKeyNothing() public {
+        _switchOff();
+        vm.prank(buyer); // cancelling still works after the switch and writes a closed record naming the key
+        vault.cancelSignedGrant(agentGrant, fresh, bytes32("x"), "");
+        uint256 id = uint256(keccak256(abi.encode(agentGrant, fresh, bytes32("x"))));
+        vm.startPrank(fresh);
+        vm.expectRevert(abi.encodeWithSelector(ICrestVault.GrantClosed.selector, id));
+        vault.grant(id, stranger, _wide(), 0, "");
+        vm.expectRevert(abi.encodeWithSelector(ICrestVault.GrantClosed.selector, id));
+        vault.createChild(id, 0, "");
+        vm.expectRevert(ICrestVault.NotAuthorized.selector);
+        vault.setPaused(id, false, "");
+        vm.stopPrank();
+        assertTrue(vault.getGrant(id).closed);
+        assertEq(vault.grantOf(fresh), 0);
+        assertFalse(vault.signsFor(fresh, id));
+    }
+
+    function test_attack_afterTheSwitch_aSubAgentsChildVault_cannotBeFilledOrAdded() public {
+        vm.prank(sub);
+        address child = vault.createChild(subGrant, 0, "");
+        _switchOff();
+        vm.prank(sub);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.fundChild(child, 1, "");
+        vm.prank(buyer);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.fundChild(child, 1, "");
+        vm.prank(buyer);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.createChild(subGrant, bytes32("b"), "");
+        vm.prank(sub); // the same salt as the existing child is walked before the existing address returns
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.createChild(subGrant, 0, "");
+    }
+
+    function test_attack_theSwitchSetWhileTheAgentIsPaused_holdsAfterTheResume() public {
+        vm.prank(principal);
+        vault.setPaused(agentGrant, true, "");
+        _switchOff();
+        vm.prank(principal);
+        vault.setPaused(agentGrant, false, "");
+        vm.prank(buyer);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        vault.grant(agentGrant, sub2, _wide(), bytes32("n"), "");
+    }
+
+    function test_attack_theSwitchOnAGrantInsideAChildVault_holds() public {
+        vm.prank(buyer);
+        CrestVault child = CrestVault(vault.createChild(agentGrant, 0, ""));
+        vm.prank(buyer);
+        uint256 g = child.grant(ROOT, sub2, _wide(), 0, "");
+        ICrestVault.Caps memory off = _wide();
+        off.mayDelegate = false;
+        vm.prank(principal); // the top principal reaches into the child
+        child.setCaps(g, off, "");
+        vm.startPrank(sub2);
+        vm.expectRevert(ICrestVault.MayNotDelegate.selector);
+        child.grant(g, fresh, _wide(), 0, "");
+        vm.expectRevert(ICrestVault.NotAuthorized.selector);
+        child.setCaps(g, _wide(), "");
+        vm.stopPrank();
     }
 
     // The switch is a signed-grant stop too
@@ -197,7 +307,7 @@ contract DelegationSwitchTest is CrestBase {
         assertFalse(_grantOf(vault, agentGrant).paused);
     }
 
-    function test_theSwitch_turnedOffAgain_letsTheAgentDelegateAgain() public {
+    function test_theSwitch_turnedBackOn_letsTheAgentDelegateAgain() public {
         _switchOff();
         vm.prank(principal);
         vault.setCaps(agentGrant, _caps(HOLD, 3 * HOLD, type(uint128).max, 10, true, true), "delegation on");
