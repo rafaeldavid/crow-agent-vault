@@ -678,4 +678,6 @@ So this build's deploy needs about 49.1 million gas. Estimate each creation on t
     - keep it, fail-closed and as described;
     - exempt the top principal in `createChild` and `fundChild` too.
 
+    **The delegation switch (roadmap N221, 2026-11-24; measured).** The principal switches off an agent's power to delegate with `setCaps` on the agent's grant, `mayDelegate` false and every other field as it was. `test/DelegationSwitch.t.sol` shows that this one call refuses, with `MayNotDelegate`, every later `grant`, `createChild`, `fundChild` and `grantBySig` by the agent, by a sub-agent or sub-sub-agent made before it, and inside a child vault below it; a slip signed before the switch and submitted after it lands nothing; no one below the agent can turn it back on; and the agent and its sub-agents keep paying. No gap found, so no change to `src/`. What the tests do not claim: the top principal's own `grant` still skips the walk (this item), and the switch is not a red-teamed or audited result.
+
 The repository's visibility is settled: public since 2026-11-19, with secret scanning, push protection, private vulnerability reporting, and a rule on `main` that takes changes only by pull request with both checks passing.
