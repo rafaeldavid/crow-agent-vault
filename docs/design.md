@@ -647,6 +647,25 @@ So this build's deploy needs about 49.1 million gas. Estimate each creation on t
 - **The rerun** of the two-model test with the vault as the buyer spends model credit, so it waits for the maintainer's go.
 - **The Sepolia deploy of this build** is a new factory and module at new addresses. Vaults from an earlier factory keep the agent's key as the buyer.
 
+### 20. The next version (branch `next-version`; not deployed)
+
+The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the build an outside scan reads (`docs/audit/readiness.md`). Fixes found after it go to the branch `next-version` and ship in a new factory at a new address. Its deploy waits for the maintainer (Rafa, 2026-11-25).
+
+**RT-2: approvals keyed apart from the fee's flags.**
+- **The defect, in the stable build.** `charge` stored an approved ERC-3009 digest's flag in transient storage at the digest itself, and `isValidSignature` answered the token yes for any hash whose slot held 1. The fee's pending flag lives in the same transient space at a fixed slot, `keccak256("crest.vault.pending.set")`. So after a payment with a fee, the token got a yes for that one hash [measured by the red team, `docs/audit/readiness.md`, RT-2].
+- **Severity: Info.** A token asks only for digests it builds from typed data, and reaching the flag's slot needs a keccak preimage. It moved nothing.
+- **The change.** The vault stores each approval at `keccak256(abi.encode(APPROVAL_TAG, digest))`, with `APPROVAL_TAG = keccak256("crest.vault.approval")`, and reads the same slot when the token asks. No other transient slot of the vault answers the token. The interface's description, "yes only for a digest `charge` approved", holds as written.
+- **Tests.** `test/redteam/ReadinessRedTeam.t.sol`, `test_attack_RT2_theFeesPendingFlags_getANoFromTheToken_refused`: the fee's flag and nonce slots get a no. `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash`: every hash but the approved digest gets a no. The whole suite passes: 532 passed and 4 fork tests skipped [measured, 2026-11-25].
+- **Gas** [measured, the same tests on both builds]:
+
+  | Funding | Stable | Next |
+  | --- | --- | --- |
+  | Through the module, at a rate of 0 | 437,122 | 437,617 |
+  | The vault as the buyer | 457,869 | 458,364 |
+
+  The change adds 495 execution gas, about 0.11%: one hash for the approval and one for the token's question.
+- **Lines.** `CrestVault.sol` goes from 602 to 611.
+
 ## Open, for the maintainer
 
 1. **The fee** (section 14): decided and built. The sweeper's destination is decided when a fee is switched on. The red team's three questions are decided as built (2026-11-19). Asked "Do you want to keep all three as built?", the maintainer said "Yes, keep all three":

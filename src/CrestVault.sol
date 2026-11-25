@@ -35,6 +35,9 @@ contract CrestVault is ICrestVault, EIP712 {
     /// Transient slots: whether this vault approved a payment earlier in this transaction, and that payment's nonce.
     bytes32 internal constant PENDING_SET_SLOT = keccak256("crest.vault.pending.set");
     bytes32 internal constant PENDING_NONCE_SLOT = keccak256("crest.vault.pending.nonce");
+    /// An approved digest's transient slot is `keccak256(abi.encode(APPROVAL_TAG, digest))`, never the digest itself, so
+    /// no other transient slot of the vault answers the token (RT-2).
+    bytes32 internal constant APPROVAL_TAG = keccak256("crest.vault.approval");
 
     uint256 public immutable FEE_BPS;
     address public immutable FEE_SWEEPER;
@@ -300,8 +303,9 @@ contract CrestVault is ICrestVault, EIP712 {
                 )
             )
         );
+        bytes32 slot = _approvalSlot(digest);
         assembly {
-            tstore(digest, 1)
+            tstore(slot, 1)
         }
         emit Charged(leaf, commitment, msg.sender, amount, counterparty);
     }
@@ -340,8 +344,9 @@ contract CrestVault is ICrestVault, EIP712 {
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
         if (msg.sender == token) {
             uint256 approved;
+            bytes32 slot = _approvalSlot(hash);
             assembly {
-                approved := tload(hash)
+                approved := tload(slot)
             }
             return approved == 1 ? ERC1271_MAGIC : ERC1271_NO;
         }
@@ -474,6 +479,10 @@ contract CrestVault is ICrestVault, EIP712 {
         } catch {
             return false;
         }
+    }
+
+    function _approvalSlot(bytes32 digest) internal pure returns (bytes32) {
+        return keccak256(abi.encode(APPROVAL_TAG, digest));
     }
 
     function _isTopPrincipal(address who) internal view returns (bool) {
