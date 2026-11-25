@@ -676,6 +676,18 @@ The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the
   The change adds 495 execution gas, about 0.11%: one hash for the approval and one for the token's question.
 - **Lines.** `CrestVault.sol` goes from 602 to 611.
 
+**SF-4: no move of the vault's money while a fee-path approval is unspent.**
+- **The defect, in the stable build.** With a fee, `charge` owes the fee and approves the payment; the token pulls later in the same transaction. `withdraw`, `fundChild` and `returnToParent` checked the fee owed against the balance before that pull. So a module the principal enabled, which charges without pulling in the same call and also holds authority to move money (a controller with a child vault, or the principal itself), could move the money first. The pull then left the vault short of its fee owed: 0 left, 1 owed, and `collectFee` reverts [measured, on `f06063c`]. Found by the second-family review of this branch (fee-flags C7).
+- **Severity: Low.** It needs an enabled module, which the trust model trusts, that charges and does not pull in one call. The Holdback module pulls in the same call, refuses an ERC-6492 funding signature, and lets no one else's code run between its charge and its pull. The harm is the fee, owed to the sweeper. At the deployed rate of 0 nothing is owed, so it cannot happen.
+- **The change.** While a payment approved in this transaction is not yet spent by the token, the vault refuses a withdrawal, a fill and a return (`ApprovalPending`), as it already refused a second payment. The check is `_requireNoUnspentApproval`, which `_requireNoPendingApproval` now also uses. At a rate of 0 it returns at once. `ICrestVault.sol`'s fee description says so.
+- **Tests.** `test/review/Pr21SecondFamily.t.sol`:
+  - `test_attack_C7_aFillBetweenAChargeAndItsPull_takesTheFeeOwed_refused` and `test_attack_C7_aReturnOrAWithdrawalBetweenAChargeAndItsPull_refused` fail on `f06063c` and pass here;
+  - `test_atRateZero_aFillBeforeThePull_lands_andThePullFails` shows rate 0 unchanged;
+  - `test_observe_C10_atRateZero_twoChargesOneNonce_countTwice_andPayOnce` pins a design point the same review raised.
+
+  The whole suite passes: 552 passed and 4 fork tests skipped. A funding at a rate of 0 still costs 437,617 execution gas [measured].
+- **Lines.** `CrestVault.sol` goes from 611 to 623.
+
 ## Open, for the maintainer
 
 1. **The fee** (section 14): decided and built. The sweeper's destination is decided when a fee is switched on. The red team's three questions are decided as built (2026-11-19). Asked "Do you want to keep all three as built?", the maintainer said "Yes, keep all three":

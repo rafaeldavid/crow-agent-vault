@@ -60,7 +60,9 @@ import {AuthCaptureEscrow} from "commerce-payments/AuthCaptureEscrow.sol";
 ///         itself; the fee counts with the payment against every limit on the path, so a payment that exactly meets a
 ///         limit is refused once its fee is counted. The vault keeps what it owes (`feeOwed`), moves only the balance
 ///         above it, and pays it to the sweeper on `collectFee`. It never calls the sweeper. At a rate of 0 nothing
-///         is owed. No fee on a deposit, a withdrawal, money coming back, or a move to or from a child vault.
+///         is owed. No fee on a deposit, a withdrawal, money coming back, or a move to or from a child vault. With a
+///         fee, while a payment approved in a transaction is not yet pulled, the vault refuses another payment, a
+///         withdrawal, a fill and a return in that transaction (`ApprovalPending`), so none can take the fee owed.
 ///
 ///         Money already committed. A vault has no function that can move money a venue holds. Its only call into a
 ///         venue is a Commerce Payments escrow's payer-only `reclaim`, after that escrow's expiry, which returns money to

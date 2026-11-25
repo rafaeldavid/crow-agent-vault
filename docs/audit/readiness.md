@@ -325,6 +325,12 @@ This pass changed nothing in `src/`. No test showed money moving past a limit, o
 | SF-2 | This page's V4 said the top principal's exemption from the delegation switch applies to grants by transaction. It applies to its signed grants too, as `ICrestVault.sol` and design section 2 say | Documentation | Corrected here and in the design record (section 2, open item 13) | `test_observe_SF2_theTopPrincipalsSlips_landBelowAGrantWhoseDelegationIsOff` |
 | SF-3 | Design section 18 said a narrowing binds every grant below from the next payment. A child vault keeps spending money filled before the narrowing; a pause on the parent grant stops it and a take-back returns the rest | Documentation | Corrected in design section 18; known limit K-19 | `test_observe_SF3_aChildSpendsAFillMadeBeforeANarrowing_untilAPauseOrATakeBack` |
 
+A second pass by the same model family read the branch `next-version` at `f06063c` (2026-11-25, 59 claims; the verification is kept privately). It confirmed one more item, which is in this page's build too:
+
+| ID | Finding | Severity | Status | Test |
+| --- | --- | --- | --- | --- |
+| SF-4 | With a fee, an enabled module that charges without pulling in the same call, and that also holds authority to move money, can withdraw, fill a child or return to the parent before the token pulls. The vault is then left short of its fee owed | Low: an enabled module is trusted; the Holdback module pulls in the same call; at the deployed rate of 0 nothing is owed | Known limit K-20 in this build; fixed on `next-version` (design, section 20) | `review/Pr21SecondFamily.t.sol` (on `next-version`) |
+
 One claim was corrected by the verification and needs no change: the Holdback module's `uint120` cast of a hold's amount truncates rather than reverts, and Holdback then refuses the hold (`Unrepresentable`), so it fails safely (`redteam/Approval.t.sol` `test_attack_termsWhoseHoldTheModuleTruncates_failClosed`).
 
 ## 8. Known limits: do not report these as new
@@ -352,6 +358,7 @@ Each is documented with its reason and its bound. A scan finding that only resta
 | K-17 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included (RT-1). A list is optional, with no default (Rafa, 2026-11-25) | section 7, RT-1; design, section 18 | The grant's period and lifetime limits, and every limit above it; a principal who wants the agent's own keys excluded sets a list |
 | K-18 | With a module switched off, the vault's own escrow `reclaim` through it is refused (`ModuleNotEnabled`) until the principal enables it again (SF-1) | section 7, SF-1 | None lost: Holdback's own timeouts return every hold to the vault, and the module ends its commitments |
 | K-19 | A narrowing does not bind a child vault spending money filled before it: a child's payment checks the parent path's state, expiry, per-payment limit and lists, not its period or lifetime counters (SF-3) | section 7, SF-3; design, section 18 | What was filled; a pause on the parent grant stops the child at once, and a take-back returns the rest |
+| K-20 | With a fee, V13's "never taken by a withdrawal, fill or return" holds when the module pulls in the same call as its charge. A module that charges and pulls later, and holds authority to move money, can leave the vault short of its fee owed (SF-4) | section 7, SF-4 | The fee, at the stated rate; the Holdback module pulls in the same call; the deployed rate is 0; fixed on `next-version` |
 
 ## 9. Before submission
 
