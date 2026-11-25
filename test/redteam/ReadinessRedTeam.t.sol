@@ -161,6 +161,9 @@ contract ReadinessRedTeamTest is VaultBuyerBase {
         assertEq(v.isValidSignature(digest, ""), MAGIC_1271, "the approved digest");
         assertEq(v.isValidSignature(keccak256("crest.vault.pending.nonce"), ""), NO_1271, "the nonce's slot");
         assertEq(v.isValidSignature(flag, ""), NO_1271, "the fee's flag slot");
+        // The approval's own slot, the one place that now holds 1, is not a digest the vault approved.
+        bytes32 approvalSlot = keccak256(abi.encode(keccak256("crest.vault.approval"), digest));
+        assertEq(v.isValidSignature(approvalSlot, ""), NO_1271, "the approval's own slot");
         if (h != digest) assertEq(v.isValidSignature(h, ""), NO_1271);
         vm.stopPrank();
     }
