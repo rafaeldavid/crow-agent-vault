@@ -687,6 +687,20 @@ The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the
 
   The whole suite passes: 552 passed and 4 fork tests skipped. A funding at a rate of 0 still costs 437,617 execution gas [measured].
 - **Lines.** `CrestVault.sol` goes from 611 to 623.
+- **Review and red team, 2026-11-25.** The review found the change correct; its test and documentation points are fixed. The red team found nothing against the change: no withdrawal, fill, return or payment left a vault short of its fee owed, and no legitimate path was blocked across transactions [measured, `test/redteam/Sf4RedTeam.t.sol`, 17 tests; they also pass under `forge test --isolate`].
+  - **Tested paths that land with a pending approval, or after one:**
+    - the principal's withdrawal and take-back after a failed charge in the same transaction, and after a failed or abandoned charge in a later one;
+    - a pause or a close in the middle of a charge's transaction;
+    - every stop: pause, close, `setCaps`, `setModule` off and a list write;
+    - a child vault and its parent, each moving while the other's approval is pending;
+    - Holdback's timeouts and the vault's escrow `reclaim`;
+    - `collectFee` and the sweeper;
+    - one and two payments per transaction, through the Holdback module and a direct venue, at rates of 0 and 1%.
+  - **Observations, all within one transaction or from a trusted module:**
+    - **O-1:** a charge left unpulled blocks the principal's withdrawal and a fill in that same transaction until the pull. Each of those needs the caller's own authority, so only whoever built the transaction meets it.
+    - **O-2:** an approval that can never be pulled (its `validBefore` already passed) blocks moves only in its own transaction.
+    - **O-3:** a stop later in the charge's own transaction does not revoke its approval. That comes from the earlier design, not from SF-4.
+    - **O-4:** at a rate above 0 the fee is owed when the vault approves a payment, not when the token pulls it. So an enabled module that charges again with a nonce the token has already spent, or abandons a charge, has the vault owe the fee for a payment that never left. The cost is at most the rate times that amount. It predates SF-4, needs an enabled module, and cannot happen at the deployed rate of 0. The smallest fix is to refuse in `charge` a nonce the token already reports as used. It is in this section's backlog, not built.
 
 ## Open, for the maintainer
 
