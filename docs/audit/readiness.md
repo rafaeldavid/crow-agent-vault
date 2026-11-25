@@ -1,6 +1,6 @@
 # Readiness for an outside automated scan
 
-**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations. None needs a change to `src/` before a scan. Six items wait for the maintainer (section 9).
+**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations. None needs a change to `src/` before a scan. Five items wait for the maintainer (section 9).
 
 This page is the scan's starting point. It sets the scope, the trust model and the invariants. Each invariant maps to the tests that check it, and the page records what was run, with its settings and results, and what is left untested. Findings and known limits close the page. The vault is not audited, and nothing here says it is secure. It runs on local chains and test networks only.
 
@@ -306,7 +306,7 @@ This pass changed nothing in `src/`. No test showed money moving past a limit, o
 
 | ID | Finding | Severity | Status | Test |
 | --- | --- | --- | --- | --- |
-| RT-1 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included. The agent writes the terms, signs as seller, adjudicator and buyer, delivers and accepts early; the price reaches its key. The design record's section 18 said no path sends money to the agent's key. The limits still bound it; with the default list on the grant the same terms are refused (`CounterpartyNotAllowed`). | Low (red team): within the limits and the terms, but it contradicted a stated claim a principal could rely on | Documented: section 18 of `docs/design.md` is corrected in this pull request. Open for the maintainer: whether onboarding and the deploy defaults should always set a list on an agent's grant | `test_finding_RT1_anUnlistedGrant_paysTheAgentsOwnKey` (asserts the behaviour) |
+| RT-1 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included. The agent writes the terms, signs as seller, adjudicator and buyer, delivers and accepts early; the price reaches its key. The design record's section 18 said no path sends money to the agent's key. The limits still bound it; with the default list on the grant the same terms are refused (`CounterpartyNotAllowed`). | Low (red team): within the limits and the terms, but it contradicted a stated claim a principal could rely on | Documented: section 18 of `docs/design.md` is corrected in this pull request. Decided: a list stays optional, with no default (Rafa, 2026-11-25); known limit K-17 | `test_finding_RT1_anUnlistedGrant_paysTheAgentsOwnKey` (asserts the behaviour) |
 | RT-2 | The vault's ERC-1271 answer to the token reads any transient slot that holds 1, and the fee's pending flag sits in the same transient space at the fixed slot `keccak256("crest.vault.pending.set")`. After a payment with a fee, the token gets a yes for that one hash. An honest token asks only for digests it builds from typed data, so reaching the slot needs a keccak preimage | Info: moves nothing; every other hash gets a no (fuzzed, 256 runs) | Open, for the next contract version: key the approval as `keccak256(abi.encode(TAG, digest))`, or refuse the two fee slots in the token's branch. A change ships in a new factory | `test_finding_RT2_theTokenGetsAYesForTheFeesPendingFlag`, `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash` |
 | V-I1 | `windowEnd` is 40 bits. Within one period of 2^40 s (the year 36,812) a window's end no longer fits, the stored end wraps, and every payment starts a fresh window | Info: unreachable on any chain for about 34,000 years | Open; the next version may store the window's index or a 64-bit end | `test_observe_theWindowEndWrapsOnlyNearTheYear36812` |
 | RT-O1 | Filling a child vault and returning the money, day after day, spends the root's and every ancestor grant's lifetime with no money leaving: fills count, returns give nothing back. A sibling agent is then refused until the principal raises the limit | Info: the agent's own limits bound it; one line for the owner's guide | Documented here | `test_observe_aFillAndReturnLoop_burnsTheRootsLifetime_withoutPayingAnyone` |
@@ -338,6 +338,7 @@ Each is documented with its reason and its bound. A scan finding that only resta
 | K-14 | The delegation switch is on the chain only: a contract controller with its own session keys, or a shared private key, still lets new keys act | design, Open 13, "The delegation switch" | The controller's own limits |
 | K-15 | A slip's holder can land it before a cancel lands | design, section 17 | Short deadlines; a close still stops the landed grant |
 | K-16 | Holdback's own known issues | Holdback's `docs/audit/known-issues.md` | As recorded there |
+| K-17 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included (RT-1). A list is optional, with no default (Rafa, 2026-11-25) | section 7, RT-1; design, section 18 | The grant's period and lifetime limits, and every limit above it; a principal who wants the agent's own keys excluded sets a list |
 
 ## 9. Before submission
 
@@ -346,10 +347,12 @@ Each is documented with its reason and its bound. A scan finding that only resta
 - 529 tests pass, 50 of them new, and the deep campaign passes 38 of 38. The new suites catch all 12 planted mutants.
 - Static analysis is triaged, and the known limits are listed so the scan can tell them from new findings.
 
+**Decided:** RT-1's default. A merchant list on an agent's grant stays optional, and neither onboarding nor the deploy script sets one by default (Rafa, 2026-11-25). The behaviour is by design ("no list means anyone"); the claim that contradicted it is corrected, and K-17 records the limit.
+
 **Not ready, or the maintainer's to decide:**
-1. **RT-1's default.** Decide whether onboarding and the deploy script should always set a merchant list on an agent's grant. The behaviour is by design ("no list means anyone"); the claim that contradicted it is corrected.
-2. **RT-2 and V-I1** wait for the next contract version. Either can be fixed before the scan, as a new factory with a review and a red team, or recorded for the scan as known Info items. This page records them.
-3. **Open items 12, 13 and 14** carry recommendations from 2026-11-24 (document, no change) that the maintainer has not yet confirmed.
-4. **A second review from another model family** has not run. Both earlier reports recommend one for sections 18 and 19.
-5. **Which build the scan reads.** `main` (this page's scope) is not the build deployed on Sepolia (`36485df`). Scanning `main` matches Holdback's practice of having the scan read the next build.
-6. **The fork suites** were not rerun in this pass, because it touched no RPC. Run them once against a Sepolia fork before the submission.
+
+1. **RT-2 and V-I1** wait for the next contract version. Either can be fixed before the scan, as a new factory with a review and a red team, or recorded for the scan as known Info items. This page records them.
+2. **Open items 12, 13 and 14** carry recommendations from 2026-11-24 (document, no change) that the maintainer has not yet confirmed.
+3. **A second review from another model family** has not run. Both earlier reports recommend one for sections 18 and 19.
+4. **Which build the scan reads.** `main` (this page's scope) is not the build deployed on Sepolia (`36485df`). Scanning `main` matches Holdback's practice of having the scan read the next build.
+5. **The fork suites** were not rerun in this pass, because it touched no RPC. Run them once against a Sepolia fork before the submission.
