@@ -35,6 +35,9 @@ contract CrestVault is ICrestVault, EIP712 {
     /// Transient slots: whether this vault approved a payment earlier in this transaction, and that payment's nonce.
     bytes32 internal constant PENDING_SET_SLOT = keccak256("crest.vault.pending.set");
     bytes32 internal constant PENDING_NONCE_SLOT = keccak256("crest.vault.pending.nonce");
+    /// An approved digest's transient slot is `keccak256(abi.encode(APPROVAL_TAG, digest))`, never the digest itself, so
+    /// no other transient slot of the vault answers the token (RT-2).
+    bytes32 internal constant APPROVAL_TAG = keccak256("crest.vault.approval");
 
     uint256 public immutable FEE_BPS;
     address public immutable FEE_SWEEPER;
@@ -125,6 +128,7 @@ contract CrestVault is ICrestVault, EIP712 {
     /// @inheritdoc ICrestVault
     function withdraw(address to, uint256 amount, bytes calldata note) external {
         _requireTopPrincipal();
+        _requireNoUnspentApproval();
         _requireAboveFee(amount);
         emit Withdrawn(to, amount, note);
         SafeTransferLib.safeTransfer(token, to, amount);
@@ -231,6 +235,7 @@ contract CrestVault is ICrestVault, EIP712 {
         if (id == 0) revert UnknownChild();
         if (!authorityOver(msg.sender, id)) revert NotAuthorized();
         _requireDelegable(id);
+        _requireNoUnspentApproval();
         _requireAboveFee(amount);
         uint128 a = _amount(amount);
         for (uint256 g = id; g != 0; g = _grants[g].parent) {
@@ -254,6 +259,7 @@ contract CrestVault is ICrestVault, EIP712 {
         address p = parent;
         if (p == address(0)) revert NotChildVault();
         if (msg.sender != p && !authorityOver(msg.sender, ROOT)) revert NotAuthorized();
+        _requireNoUnspentApproval();
         _requireAboveFee(amount);
         emit ReturnedToParent(p, amount, msg.sender, note);
         SafeTransferLib.safeTransfer(token, p, amount);
@@ -300,8 +306,9 @@ contract CrestVault is ICrestVault, EIP712 {
                 )
             )
         );
+        bytes32 slot = _approvalSlot(digest);
         assembly {
-            tstore(digest, 1)
+            tstore(slot, 1)
         }
         emit Charged(leaf, commitment, msg.sender, amount, counterparty);
     }
@@ -340,8 +347,9 @@ contract CrestVault is ICrestVault, EIP712 {
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
         if (msg.sender == token) {
             uint256 approved;
+            bytes32 slot = _approvalSlot(hash);
             assembly {
-                approved := tload(hash)
+                approved := tload(slot)
             }
             return approved == 1 ? ERC1271_MAGIC : ERC1271_NO;
         }
@@ -476,6 +484,10 @@ contract CrestVault is ICrestVault, EIP712 {
         }
     }
 
+    function _approvalSlot(bytes32 digest) internal pure returns (bytes32) {
+        return keccak256(abi.encode(APPROVAL_TAG, digest));
+    }
+
     function _isTopPrincipal(address who) internal view returns (bool) {
         return parent == address(0) && who == principal;
     }
@@ -558,6 +570,19 @@ contract CrestVault is ICrestVault, EIP712 {
     /// With a fee, refuses a second approval in one transaction while the token has not yet spent the first, so every
     /// balance check sees every earlier payment's pull. Then records this approval's nonce.
     function _requireNoPendingApproval(bytes32 nonce) internal {
+        _requireNoUnspentApproval();
+        bytes32 setSlot = PENDING_SET_SLOT;
+        bytes32 nonceSlot = PENDING_NONCE_SLOT;
+        assembly {
+            tstore(setSlot, 1)
+            tstore(nonceSlot, nonce)
+        }
+    }
+
+    /// With a fee, refuses while a payment approval of this transaction is not yet spent by the token. A payment, a
+    /// withdrawal, a fill or a return then checks the fee owed against a balance that every earlier pull has left.
+    function _requireNoUnspentApproval() internal view {
+        if (FEE_BPS == 0) return;
         bytes32 setSlot = PENDING_SET_SLOT;
         bytes32 nonceSlot = PENDING_NONCE_SLOT;
         uint256 set;
@@ -567,10 +592,6 @@ contract CrestVault is ICrestVault, EIP712 {
             last := tload(nonceSlot)
         }
         if (set != 0 && !IERC3009Domain(token).authorizationState(address(this), last)) revert ApprovalPending();
-        assembly {
-            tstore(setSlot, 1)
-            tstore(nonceSlot, nonce)
-        }
     }
 
     /// Asks `list`, read-only and with `LIST_GAS`, whether grant `id` may pay `counterparty`. Only the exact magic

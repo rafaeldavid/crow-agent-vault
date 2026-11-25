@@ -20,7 +20,7 @@ contract SecondFamilyTest is VaultBuyerBase {
         "SignedGrant(uint256 parent,address controller,Caps caps,bytes32 salt,uint40 deadline,bytes note)Caps(uint128 perSpend,uint128 perPeriod,uint128 lifetime,uint32 maxOpen,uint32 period,uint40 expiresAt,bool mayDelegate,address list)"
     );
 
-    /// SF-1 (C10, Info). Switching a module off while it has funded holds also shuts the vault's own escrow `reclaim`
+    /// SF-1 (Info). Switching a module off while it has funded holds also shuts the vault's own escrow `reclaim`
     /// through that module, which asks for an enabled module. Holdback's own timeouts still return every hold to the
     /// vault, and the module still ends its commitments. Enabling the module again opens the vault's `reclaim` again
     /// (`test_journey_holdsEndByTheirTerms_withoutTheAgent`).
@@ -63,7 +63,7 @@ contract SecondFamilyTest is VaultBuyerBase {
         assertEq(vault.getGrant(agentGrant).open, 0);
     }
 
-    /// SF-2 (v04 C1, documentation). The top vault's principal is exempt from the delegation switch when it grants by
+    /// SF-2 (documentation). The top vault's principal is exempt from the delegation switch when it grants by
     /// transaction and when it grants by a signed grant: its slip lands below a grant whose delegation is off, whether
     /// it was signed before or after the switch. The agent's own slip is refused.
     function test_observe_SF2_theTopPrincipalsSlips_landBelowAGrantWhoseDelegationIsOff() public {
@@ -84,7 +84,7 @@ contract SecondFamilyTest is VaultBuyerBase {
         vault.grantBySig(agents, agentsSig);
     }
 
-    /// SF-3 (v05 C1, documentation). A narrowing binds the agent and every grant below it in the same vault from the
+    /// SF-3 (documentation). A narrowing binds the agent and every grant below it in the same vault from the
     /// next payment. It does not bind a child vault spending money filled before the narrowing: a child's payment checks
     /// the parent path's state, expiry, per-payment limit and lists, not its period or lifetime counters, which the fill
     /// already charged. A pause on the parent grant stops the child at once, and a take-back returns what is left.

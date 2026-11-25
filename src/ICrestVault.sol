@@ -60,7 +60,9 @@ import {AuthCaptureEscrow} from "commerce-payments/AuthCaptureEscrow.sol";
 ///         itself; the fee counts with the payment against every limit on the path, so a payment that exactly meets a
 ///         limit is refused once its fee is counted. The vault keeps what it owes (`feeOwed`), moves only the balance
 ///         above it, and pays it to the sweeper on `collectFee`. It never calls the sweeper. At a rate of 0 nothing
-///         is owed. No fee on a deposit, a withdrawal, money coming back, or a move to or from a child vault.
+///         is owed. No fee on a deposit, a withdrawal, money coming back, or a move to or from a child vault. With a
+///         fee, while a payment approved in a transaction is not yet pulled, the vault refuses another payment, a
+///         withdrawal, a fill and a return in that transaction (`ApprovalPending`), so none can take the fee owed.
 ///
 ///         Money already committed. A vault has no function that can move money a venue holds. Its only call into a
 ///         venue is a Commerce Payments escrow's payer-only `reclaim`, after that escrow's expiry, which returns money to
@@ -208,7 +210,8 @@ interface ICrestVault {
     function setModule(address module, address payee, bytes calldata note) external;
 
     /// @notice A top vault's principal sends `amount` of the vault's balance to `to`. Money a venue holds is not the
-    ///         vault's balance and cannot be reached.
+    ///         vault's balance and cannot be reached. With a fee, refused while a payment of this transaction is
+    ///         unpulled (`ApprovalPending`, the fee paragraph above).
     function withdraw(address to, uint256 amount, bytes calldata note) external;
 
     // The tree
@@ -252,14 +255,17 @@ interface ICrestVault {
     function createChild(uint256 grantId, bytes32 salt, bytes calldata note) external returns (address child);
 
     /// @notice Moves `amount` into `child`, charged to the period and total limits of the path of the grant that
-    ///         created it. By that grant's controller or authority above it, on the same terms as `createChild`.
+    ///         created it. By that grant's controller or authority above it, on the same terms as `createChild`. With a
+    ///         fee, refused while a payment of this transaction is unpulled (`ApprovalPending`).
     function fundChild(address child, uint256 amount, bytes calldata note) external;
 
-    /// @notice Has `child` send `amount` back to this vault. By the grant's controller or authority above it.
+    /// @notice Has `child` send `amount` back to this vault. By the grant's controller or authority above it. The
+    ///         child refuses it as its `returnToParent` does.
     function takeBackFromChild(address child, uint256 amount, bytes calldata note) external;
 
     /// @notice A child vault sends `amount` to its parent vault: by its principal, by anyone with authority over its
-    ///         root, or by its parent vault.
+    ///         root, or by its parent vault. With a fee, refused while a payment of this transaction from this vault is
+    ///         unpulled (`ApprovalPending`).
     function returnToParent(uint256 amount, bytes calldata note) external;
 
     // Payments

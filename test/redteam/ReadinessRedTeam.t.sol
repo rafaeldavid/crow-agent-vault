@@ -103,12 +103,11 @@ contract ReadinessRedTeamTest is VaultBuyerBase {
 
     // Invariant 8: the vault's answer to the token
 
-    /// RT-2. The token's ERC-1271 branch answers yes for any transient slot that holds 1, and the fee's pending flag
-    /// lives in the same transient space at a fixed, public slot. After a payment with a fee, the token gets a yes for
-    /// a "digest" equal to that slot. An honest token only asks digests it builds from typed data, so reaching it needs
-    /// a keccak preimage of that slot; it moves nothing today, but the answer is not "only the digest `charge`
-    /// approved".
-    function test_finding_RT2_theTokenGetsAYesForTheFeesPendingFlag() public {
+    /// RT-2, fixed on the branch `next-version`. In the stable build (`vault-stable-1`) the token's ERC-1271 branch
+    /// answered yes for any transient slot that held 1, and the fee's pending flag lived in the same transient space at
+    /// a fixed, public slot, so after a payment with a fee the token got a yes for a "digest" equal to that slot. The
+    /// vault now keys each approval as `keccak256(abi.encode(APPROVAL_TAG, digest))`, so the fee's flags answer no.
+    function test_attack_RT2_theFeesPendingFlags_getANoFromTheToken_refused() public {
         CrestFeeSweeper sweeper = new CrestFeeSweeper(makeAddr("fee destination"));
         CrestFactory f = new CrestFactory(100, address(sweeper));
         CrestVault v = CrestVault(f.create(principal, address(usdc), bytes32("rt2")));
@@ -124,13 +123,15 @@ contract ReadinessRedTeamTest is VaultBuyerBase {
         assertEq(v.isValidSignature(flag, ""), NO_1271, "before any payment");
         pay.pay(v, buyer, HOLD, bytes32(0));
         vm.prank(address(usdc));
-        assertEq(v.isValidSignature(flag, ""), MAGIC_1271, "observed: a yes for the fee's pending flag");
+        assertEq(v.isValidSignature(flag, ""), NO_1271, "a no for the fee's pending flag");
+        vm.prank(address(usdc));
+        assertEq(v.isValidSignature(keccak256("crest.vault.pending.nonce"), ""), NO_1271, "and for its nonce slot");
         vm.prank(stranger);
         assertEq(v.isValidSignature(flag, ""), NO_1271, "anyone but the token still gets a no");
     }
 
-    /// RT-2's bound: after a payment with a fee, the token gets a yes for the approved digest and the fee's flag
-    /// slot, and a no for every other hash, the nonce's slot included.
+    /// RT-2's bound: after a payment with a fee, the token gets a yes for the approved digest and a no for every other
+    /// hash, the fee's flag and nonce slots included.
     function testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash(bytes32 h) public {
         CrestFeeSweeper sweeper = new CrestFeeSweeper(makeAddr("fee destination"));
         CrestFactory f = new CrestFactory(100, address(sweeper));
@@ -159,7 +160,11 @@ contract ReadinessRedTeamTest is VaultBuyerBase {
         vm.startPrank(address(usdc));
         assertEq(v.isValidSignature(digest, ""), MAGIC_1271, "the approved digest");
         assertEq(v.isValidSignature(keccak256("crest.vault.pending.nonce"), ""), NO_1271, "the nonce's slot");
-        if (h != digest && h != flag) assertEq(v.isValidSignature(h, ""), NO_1271);
+        assertEq(v.isValidSignature(flag, ""), NO_1271, "the fee's flag slot");
+        // The approval's own slot, the one place that now holds 1, is not a digest the vault approved.
+        bytes32 approvalSlot = keccak256(abi.encode(keccak256("crest.vault.approval"), digest));
+        assertEq(v.isValidSignature(approvalSlot, ""), NO_1271, "the approval's own slot");
+        if (h != digest) assertEq(v.isValidSignature(h, ""), NO_1271);
         vm.stopPrank();
     }
 

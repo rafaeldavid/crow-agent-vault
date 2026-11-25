@@ -298,7 +298,7 @@ It changes the third: the fixed recipient is a sweeper contract that collects. W
 - **At a rate of 0.** No fee is ever owed, and a payment's extra cost is measured below.
 - **The destination.** Rafa decides it when a fee is switched on, as a wallet that needs two of three keys. For the rate-0 factory on the test network, the sweeper stand-in is the session deployer's address, `0xa27Cd8A0cF6D15559aF9E6Ff9ebd885da57C3E6a`, passed to the deploy script as `CREST_FEE_SWEEPER` (the script's default is 0, which a rate of 0 also accepts): no fee accrues, so nothing is ever sent there. The deploy script refuses a non-zero rate unless the sweeper is a contract. A factory with a real rate needs the maintainer's choice of destination first.
 
-- **One approval at a time, with a fee.** With a fee on, the vault refuses a second payment approval in one transaction until the token has spent the first (`ApprovalPending`). So every balance check sees every earlier pull, and two commitments can never share one authorization. Crest's Holdback module charges and pulls in one call, so it never meets this.
+- **One approval at a time, with a fee.** With a fee on, the vault refuses a second payment approval in one transaction until the token has spent the first (`ApprovalPending`). So every balance check sees every earlier pull, and two commitments can never share one authorization. On the branch `next-version` it also refuses a withdrawal, a fill and a return until then (section 20, SF-4). Crest's Holdback module charges and pulls in one call, so it never meets this.
 - **Smaller points.**
   - An amount too large to carry its fee is refused by name (`OverPerSpend`).
   - `collectFee` with nothing owed returns without an event.
@@ -646,6 +646,61 @@ So this build's deploy needs about 49.1 million gas. Estimate each creation on t
 - **The client** keeps stopping before it signs as the vault until then. Its default, `CREST_BUYER=agent`, works only with a module without `VAULT_IS_BUYER`, such as Sepolia's current one. With this build's module it refuses at start and names the setting [review re-check, Low]. So the client cannot buy through this build's module until T-549.
 - **The rerun** of the two-model test with the vault as the buyer spends model credit, so it waits for the maintainer's go.
 - **The Sepolia deploy of this build** is a new factory and module at new addresses. Vaults from an earlier factory keep the agent's key as the buyer.
+
+### 20. The next version (branch `next-version`; not deployed)
+
+The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the build an outside scan reads (`docs/audit/readiness.md`). Fixes found after it go to the branch `next-version` and ship in a new factory at a new address. Its deploy waits for the maintainer (Rafa, 2026-11-25).
+
+**RT-2: approvals keyed apart from the fee's flags.**
+- **The defect, in the stable build.** `charge` stored an approved ERC-3009 digest's flag in transient storage at the digest itself, and `isValidSignature` answered the token yes for any hash whose slot held 1. The fee's pending flag lives in the same transient space at a fixed slot, `keccak256("crest.vault.pending.set")`. So after a payment with a fee, the token got a yes for that one hash [measured by the red team, `docs/audit/readiness.md`, RT-2].
+- **Severity: Info.** A token asks only for digests it builds from typed data, and reaching the flag's slot needs a keccak preimage. It moved nothing.
+- **The change.** The vault stores each approval at `keccak256(abi.encode(APPROVAL_TAG, digest))`, with `APPROVAL_TAG = keccak256("crest.vault.approval")`, and reads the same slot when the token asks. No other transient slot of the vault answers the token. The interface's description, "yes only for a digest `charge` approved", holds as written.
+- **Tests.** `test/redteam/ReadinessRedTeam.t.sol`, `test_attack_RT2_theFeesPendingFlags_getANoFromTheToken_refused`: the fee's flag and nonce slots get a no. `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash`: every hash but the approved digest gets a no, the approval's own slot included.
+- **A second form, also closed.** A module that charges with the nonce 1 set the fee's nonce slot to 1, so the stable build also answered the token yes for `keccak256("crest.vault.pending.nonce")`. This version answers no [measured: `test_attack_aNonceOfOne_makesTheFeesNonceSlotHoldOne_andTheTokenStillGetsANo_refused` passes here and fails against the stable build's `src/`].
+- **Review and red team, 2026-11-25.** The review found the change correct and complete; its four documentation and test points are fixed. The red team tried 16 attacks and payment paths (`test/redteam/NextVersionRedTeam.t.sol`) and found nothing against the change. Its tests covered:
+  - the tagged slot, its neighbours and the tag itself;
+  - rates of 0 and 1%, before any charge and with two charges in one transaction;
+  - a token that asks twice, another vault, another token, and a child vault with its parent;
+  - the buyer-message branch, which is unchanged;
+  - fundings through the Holdback module, the module without `VAULT_IS_BUYER`, and the direct venue.
+
+  The whole suite passes: 548 passed and 4 fork tests skipped [measured, 2026-11-25].
+- **Unchanged, by design.** An approval keeps answering yes for the rest of its transaction after its pull. The token spends each nonce once, and only the payee can pull, so a second pull is refused [measured: `test_attack_theTokenAsksTwice_theSecondPullIsRefusedByTheSpentNonce`].
+- **Gas** [measured, the same tests on both builds]:
+
+  | Funding | Stable | Next |
+  | --- | --- | --- |
+  | Through the module, at a rate of 0 | 437,122 | 437,617 |
+  | The vault as the buyer | 457,869 | 458,364 |
+
+  The change adds 495 execution gas, about 0.11%: one hash for the approval and one for the token's question.
+- **Lines.** `CrestVault.sol` goes from 602 to 611.
+
+**SF-4: no move of the vault's money while a fee-path approval is unspent.**
+- **The defect, measured on `f06063c` and present in the stable build** [inferred: `withdraw`, `fundChild` and `returnToParent` are the same at `vault-stable-1`]. With a fee, `charge` owes the fee and approves the payment; the token pulls later in the same transaction. `withdraw`, `fundChild` and `returnToParent` checked the fee owed against the balance before that pull. So a module the principal enabled, which charges without pulling in the same call and also holds authority to move money (a controller with a child vault, or the principal itself), could move the money first. The pull then left the vault short of its fee owed: 0 left, 1 owed, and `collectFee` reverts [measured, on `f06063c`]. Found by the second-family review of this branch (fee-flags C7).
+- **Severity: Low.** It needs an enabled module, which the trust model trusts, that charges and does not pull in one call. The Holdback module pulls in the same call, refuses an ERC-6492 funding signature, and lets no one else's code run between its charge and its pull. The harm is the fee, owed to the sweeper. At the deployed rate of 0 nothing is owed, so it cannot happen.
+- **The change.** While a payment approved in this transaction is not yet spent by the token, the vault refuses a withdrawal, a fill and a return (`ApprovalPending`), as it already refused a second payment. The check is `_requireNoUnspentApproval`, which `_requireNoPendingApproval` now also uses. At a rate of 0 it returns at once. It refuses whether or not the payment owes a fee, on purpose: it lasts only for the rest of the transaction that holds the unpulled approval, and so blocks only a move batched with that payment, never a later transaction. `collectFee` and the escrow `reclaim` are not refused: paying the fee owed and taking money in leave the pending pull covered. `ICrestVault.sol`'s fee description says so.
+- **Tests.** `test/review/Pr21SecondFamily.t.sol`:
+  - `test_attack_C7_aFillBetweenAChargeAndItsPull_takesTheFeeOwed_refused` and `test_attack_C7_aReturnOrAWithdrawalBetweenAChargeAndItsPull_refused` fail on `f06063c` and pass here;
+  - `test_atRateZero_aFillBeforeThePull_lands_andThePullFails` shows rate 0 unchanged;
+  - `test_observe_C10_atRateZero_twoChargesOneNonce_countTwice_andPayOnce` pins a design point the same review raised.
+
+  The whole suite passes: 552 passed and 4 fork tests skipped. A funding at a rate of 0 still costs 437,617 execution gas [measured].
+- **Lines.** `CrestVault.sol` goes from 611 to 623.
+- **Review and red team, 2026-11-25.** The review found the change correct; its test and documentation points are fixed. The red team found nothing against the change: no withdrawal, fill, return or payment left a vault short of its fee owed, and no legitimate path was blocked across transactions [measured, `test/redteam/Sf4RedTeam.t.sol`, 17 tests; they also pass under `forge test --isolate`].
+  - **Tested paths that land with a pending approval, or after one:**
+    - the principal's withdrawal and take-back after a failed charge in the same transaction, and after a failed or abandoned charge in a later one;
+    - a pause or a close in the middle of a charge's transaction;
+    - every stop: pause, close, `setCaps`, `setModule` off and a list write;
+    - a child vault and its parent, each moving while the other's approval is pending;
+    - Holdback's timeouts and the vault's escrow `reclaim`;
+    - `collectFee` and the sweeper;
+    - one and two payments per transaction, through the Holdback module and a direct venue, at rates of 0 and 1%.
+  - **Observations, all within one transaction or from a trusted module:**
+    - **O-1:** a charge left unpulled blocks the principal's withdrawal and a fill in that same transaction until the pull. Each of those needs the caller's own authority, so only whoever built the transaction meets it.
+    - **O-2:** an approval that can never be pulled (its `validBefore` already passed) blocks moves only in its own transaction.
+    - **O-3:** a stop later in the charge's own transaction does not revoke its approval. That comes from the earlier design, not from SF-4.
+    - **O-4:** at a rate above 0 the fee is owed when the vault approves a payment, not when the token pulls it. So an enabled module that charges again with a nonce the token has already spent, or abandons a charge, has the vault owe the fee for a payment that never left. The cost is at most the rate times that amount. It predates SF-4, needs an enabled module, and cannot happen at the deployed rate of 0. The smallest fix is to refuse in `charge` a nonce the token already reports as used. Not built: it is known limit K-21 in the readiness note, to take with the next contract version or before any factory with a rate above 0.
 
 ## Open, for the maintainer
 
