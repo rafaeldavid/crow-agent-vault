@@ -655,7 +655,17 @@ The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the
 - **The defect, in the stable build.** `charge` stored an approved ERC-3009 digest's flag in transient storage at the digest itself, and `isValidSignature` answered the token yes for any hash whose slot held 1. The fee's pending flag lives in the same transient space at a fixed slot, `keccak256("crest.vault.pending.set")`. So after a payment with a fee, the token got a yes for that one hash [measured by the red team, `docs/audit/readiness.md`, RT-2].
 - **Severity: Info.** A token asks only for digests it builds from typed data, and reaching the flag's slot needs a keccak preimage. It moved nothing.
 - **The change.** The vault stores each approval at `keccak256(abi.encode(APPROVAL_TAG, digest))`, with `APPROVAL_TAG = keccak256("crest.vault.approval")`, and reads the same slot when the token asks. No other transient slot of the vault answers the token. The interface's description, "yes only for a digest `charge` approved", holds as written.
-- **Tests.** `test/redteam/ReadinessRedTeam.t.sol`, `test_attack_RT2_theFeesPendingFlags_getANoFromTheToken_refused`: the fee's flag and nonce slots get a no. `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash`: every hash but the approved digest gets a no. The whole suite passes: 532 passed and 4 fork tests skipped [measured, 2026-11-25].
+- **Tests.** `test/redteam/ReadinessRedTeam.t.sol`, `test_attack_RT2_theFeesPendingFlags_getANoFromTheToken_refused`: the fee's flag and nonce slots get a no. `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash`: every hash but the approved digest gets a no, the approval's own slot included.
+- **A second form, also closed.** A module that charges with the nonce 1 set the fee's nonce slot to 1, so the stable build also answered the token yes for `keccak256("crest.vault.pending.nonce")`. This version answers no [measured: `test_attack_aNonceOfOne_makesTheFeesNonceSlotHoldOne_andTheTokenStillGetsANo_refused` passes here and fails against the stable build's `src/`].
+- **Review and red team, 2026-11-25.** The review found the change correct and complete; its four documentation and test points are fixed. The red team tried 16 attacks and payment paths (`test/redteam/NextVersionRedTeam.t.sol`) and found nothing against the change. Its tests covered:
+  - the tagged slot, its neighbours and the tag itself;
+  - rates of 0 and 1%, before any charge and with two charges in one transaction;
+  - a token that asks twice, another vault, another token, and a child vault with its parent;
+  - the buyer-message branch, which is unchanged;
+  - fundings through the Holdback module, the module without `VAULT_IS_BUYER`, and the direct venue.
+
+  The whole suite passes: 548 passed and 4 fork tests skipped [measured, 2026-11-25].
+- **Unchanged, by design.** An approval keeps answering yes for the rest of its transaction after its pull. The token spends each nonce once, and only the payee can pull, so a second pull is refused [measured: `test_attack_theTokenAsksTwice_theSecondPullIsRefusedByTheSpentNonce`].
 - **Gas** [measured, the same tests on both builds]:
 
   | Funding | Stable | Next |
