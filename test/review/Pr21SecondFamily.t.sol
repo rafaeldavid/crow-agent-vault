@@ -104,28 +104,39 @@ contract Pr21SecondFamilyTest is Test {
     }
 
     /// The same gap through a child's return to its parent, and through a withdrawal by a principal that is the module.
+    /// Each charge owes a fee of at least 1, so a move before the pull would leave the vault short of it.
     function test_attack_C7_aReturnOrAWithdrawalBetweenAChargeAndItsPull_refused() public {
         _world(200);
-        // A child's own payment, then its return to the parent before the pull.
-        m.exec(address(vault), abi.encodeCall(vault.fundChild, (address(child), 40, "")));
+        // The child charges 50 (fee 1 owed) and tries to return 10 to its parent before the pull.
+        m.exec(address(vault), abi.encodeCall(vault.fundChild, (address(child), 60, "")));
         uint256 cvb = vm.getBlockTimestamp() + 1 hours;
         bytes32 n = keccak256("three");
-        m.exec(address(child), abi.encodeCall(child.charge, (address(m), 30, bytes32(0), n, cvb, n)));
+        m.exec(address(child), abi.encodeCall(child.charge, (address(m), 50, bytes32(0), n, cvb, n)));
+        assertEq(child.feeOwed(), 1, "the child owes a fee");
         vm.expectRevert(ICrestVault.ApprovalPending.selector);
-        m.exec(address(child), abi.encodeCall(child.returnToParent, (30, "")));
-        m.pull(address(child), 30, cvb, n);
-        assertGe(token.balanceOf(address(child)), child.feeOwed(), "the child holds its fee owed");
+        m.exec(address(child), abi.encodeCall(child.returnToParent, (10, "")));
+        m.pull(address(child), 50, cvb, n);
+        // After the pull, the return is checked against what is left: 10, of which 1 is owed.
+        vm.expectRevert(ICrestVault.BalanceBelowFee.selector);
+        m.exec(address(child), abi.encodeCall(child.returnToParent, (10, "")));
+        m.exec(address(child), abi.encodeCall(child.returnToParent, (9, "")));
+        assertEq(token.balanceOf(address(child)), child.feeOwed(), "the child keeps exactly its fee owed");
 
-        // The module becomes the top vault's principal, charges, and withdraws before the pull.
+        // The module becomes the top vault's principal, charges 50 (fee 1 owed) and tries to withdraw before the pull.
         vm.prank(principal);
         vault.proposePrincipal(address(m), "");
         m.exec(address(vault), abi.encodeCall(vault.acceptPrincipal, ("")));
+        token.mint(address(vault), 100);
         uint256 left = token.balanceOf(address(vault));
-        uint256 vb = _charge(left / 2, keccak256("two"));
+        uint256 vb = _charge(50, keccak256("two"));
+        assertEq(vault.feeOwed(), 1, "the vault owes a fee");
         vm.expectRevert(ICrestVault.ApprovalPending.selector);
-        m.exec(address(vault), abi.encodeCall(vault.withdraw, (address(m), left - left / 2, "")));
-        m.pull(address(vault), left / 2, vb, keccak256("two"));
-        assertGe(token.balanceOf(address(vault)), vault.feeOwed(), "the vault holds its fee owed");
+        m.exec(address(vault), abi.encodeCall(vault.withdraw, (address(m), left - 50, "")));
+        m.pull(address(vault), 50, vb, keccak256("two"));
+        vm.expectRevert(ICrestVault.BalanceBelowFee.selector);
+        m.exec(address(vault), abi.encodeCall(vault.withdraw, (address(m), left - 50, "")));
+        m.exec(address(vault), abi.encodeCall(vault.withdraw, (address(m), left - 51, "")));
+        assertEq(token.balanceOf(address(vault)), vault.feeOwed(), "the vault keeps exactly its fee owed");
     }
 
     /// At a rate of 0 nothing is ever owed, so nothing is refused: a fill before the pull lands, as in the stable build,

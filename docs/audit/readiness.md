@@ -1,6 +1,6 @@
 # Readiness for an outside automated scan
 
-**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations, which the maintainer has acknowledged. A second review from another model family added one Info finding and two documentation points (SF-1 to SF-3). None needs a change to `src/` before a scan. Three items wait for the maintainer (section 9).
+**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations, which the maintainer has acknowledged. A second review from another model family added one Info finding and two documentation points (SF-1 to SF-3), and its pass over the next version found one Low in this build too (SF-4, known limit K-20). None needs a change to `src/` before a scan. Three items wait for the maintainer (section 9).
 
 This page is the scan's starting point. It sets the scope, the trust model and the invariants. Each invariant maps to the tests that check it, and the page records what was run, with its settings and results, and what is left untested. Findings and known limits close the page. The vault is not audited, and nothing here says it is secure. It runs on local chains and test networks only.
 
@@ -370,7 +370,7 @@ Each is documented with its reason and its bound. A scan finding that only resta
 **Decided:**
 - RT-1's default. A merchant list on an agent's grant stays optional, and neither onboarding nor the deploy script sets one by default (Rafa, 2026-11-25). The behaviour is by design ("no list means anyone"); the claim that contradicted it is corrected, and K-17 records the limit.
 - RT-2 and V-I1 (Rafa, 2026-11-25). RT-2 is fixed in the next contract version, on its own branch, after this build is tagged as the stable one; V-I1 stays a known Info item. The scan reads this build with both recorded here.
-- The second review from another model family ran on 2026-11-25 (section 7, SF-1 to SF-3), and its documentation points are corrected.
+- The second review from another model family ran on 2026-11-25 (section 7, SF-1 to SF-3), and its documentation points are corrected. Its pass over `next-version` found SF-4, recorded here as K-20 and fixed in the next version.
 
 **Not ready, or the maintainer's to decide:**
 

@@ -210,7 +210,8 @@ interface ICrestVault {
     function setModule(address module, address payee, bytes calldata note) external;
 
     /// @notice A top vault's principal sends `amount` of the vault's balance to `to`. Money a venue holds is not the
-    ///         vault's balance and cannot be reached.
+    ///         vault's balance and cannot be reached. With a fee, refused while a payment of this transaction is
+    ///         unpulled (`ApprovalPending`, the fee paragraph above).
     function withdraw(address to, uint256 amount, bytes calldata note) external;
 
     // The tree
@@ -254,14 +255,17 @@ interface ICrestVault {
     function createChild(uint256 grantId, bytes32 salt, bytes calldata note) external returns (address child);
 
     /// @notice Moves `amount` into `child`, charged to the period and total limits of the path of the grant that
-    ///         created it. By that grant's controller or authority above it, on the same terms as `createChild`.
+    ///         created it. By that grant's controller or authority above it, on the same terms as `createChild`. With a
+    ///         fee, refused while a payment of this transaction is unpulled (`ApprovalPending`).
     function fundChild(address child, uint256 amount, bytes calldata note) external;
 
-    /// @notice Has `child` send `amount` back to this vault. By the grant's controller or authority above it.
+    /// @notice Has `child` send `amount` back to this vault. By the grant's controller or authority above it. The
+    ///         child refuses it as its `returnToParent` does.
     function takeBackFromChild(address child, uint256 amount, bytes calldata note) external;
 
     /// @notice A child vault sends `amount` to its parent vault: by its principal, by anyone with authority over its
-    ///         root, or by its parent vault.
+    ///         root, or by its parent vault. With a fee, refused while a payment of this transaction from this vault is
+    ///         unpulled (`ApprovalPending`).
     function returnToParent(uint256 amount, bytes calldata note) external;
 
     // Payments
