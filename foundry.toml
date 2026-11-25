@@ -23,3 +23,12 @@ runs = 256
 
 [fmt]
 line_length = 120
+
+# The recorded deep campaigns (docs/audit/readiness.md): `FOUNDRY_PROFILE=deep forge test --match-path 'test/invariant/*'`.
+# Suites with in-file `deep.` settings use those instead (the in-file `default.` settings are CI's).
+[profile.deep.invariant]
+runs = 1000
+depth = 200
+
+[profile.deep.fuzz]
+runs = 20000
