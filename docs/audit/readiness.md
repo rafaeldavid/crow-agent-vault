@@ -1,6 +1,6 @@
 # Readiness for an outside automated scan
 
-**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations, which the maintainer has acknowledged. None needs a change to `src/` before a scan. Five items wait for the maintainer (section 9).
+**State, 2026-11-25.** Crow Vault's contracts at `main` `821f5f7` were tested end to end, in random sequences and by an adversarial pass before an outside automated scan. No test found money moving past a limit, outside a deal's terms or out of a hold. The red team found one Low (RT-1, a design claim that did not hold for a grant with no merchant list, now corrected) and one Info (RT-2). This pass added one Info (V-I1) and four Info observations, which the maintainer has acknowledged. A second review from another model family added one Info finding and two documentation points (SF-1 to SF-3). None needs a change to `src/` before a scan. Three items wait for the maintainer (section 9).
 
 This page is the scan's starting point. It sets the scope, the trust model and the invariants. Each invariant maps to the tests that check it, and the page records what was run, with its settings and results, and what is left untested. Findings and known limits close the page. The vault is not audited, and nothing here says it is secure. It runs on local chains and test networks only.
 
@@ -61,7 +61,8 @@ No function grants power to whoever deploys, creates or relays. No contract has 
 - seeded long simulations through the same handler (`test/invariant/SystemSimulation.t.sol`, 4 tests);
 - a campaign and simulations through Holdback's real contracts with the vault as the buyer (`test/invariant/HoldbackInvariants.t.sol`, handler `test/invariant/HoldbackHandler.sol`, 6 tests);
 - 6 stateless fuzz and boundary tests on the arithmetic (`test/fuzz/Arithmetic.fuzz.t.sol`);
-- 13 tests from this pass's red team (`test/redteam/ReadinessRedTeam.t.sol`).
+- 13 tests from this pass's red team (`test/redteam/ReadinessRedTeam.t.sol`);
+- 3 tests that pin the second-family review's points (`test/review/SecondFamily.t.sol`), added after the runs of section 4.
 
 The handlers decide beforehand, from the design record and not from the code, whether each call must be refused, and count every call that lands against the model (`violations`) and every allowed call that is refused (`unexpectedRefusals`). Independent ghost counters record what each grant should have counted.
 
@@ -102,7 +103,7 @@ No payment passes a grant's per-payment, per-period, lifetime or open-commitment
 
 ### V4. The delegation switch
 
-With `mayDelegate` false on any grant of a path, here or in an ancestor vault, nobody at or below it grants, creates or fills a child vault, or lands a signed grant. The one exception is the top vault's principal granting by transaction (design, open item 13).
+With `mayDelegate` false on any grant of a path, here or in an ancestor vault, nobody at or below it grants, creates or fills a child vault, or lands a signed grant. The one exception is the top vault's principal granting, by transaction or by a signed grant (design, open item 13; `review/SecondFamily.t.sol` `test_observe_SF2_theTopPrincipalsSlips_landBelowAGrantWhoseDelegationIsOff`).
 
 | Kind | Tests |
 | --- | --- |
@@ -307,14 +308,24 @@ This pass changed nothing in `src/`. No test showed money moving past a limit, o
 | ID | Finding | Severity | Status | Test |
 | --- | --- | --- | --- | --- |
 | RT-1 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included. The agent writes the terms, signs as seller, adjudicator and buyer, delivers and accepts early; the price reaches its key. The design record's section 18 said no path sends money to the agent's key. The limits still bound it; with the default list on the grant the same terms are refused (`CounterpartyNotAllowed`). | Low (red team): within the limits and the terms, but it contradicted a stated claim a principal could rely on | Documented: section 18 of `docs/design.md` is corrected in this pull request. Decided: a list stays optional, with no default (Rafa, 2026-11-25); known limit K-17 | `test_finding_RT1_anUnlistedGrant_paysTheAgentsOwnKey` (asserts the behaviour) |
-| RT-2 | The vault's ERC-1271 answer to the token reads any transient slot that holds 1, and the fee's pending flag sits in the same transient space at the fixed slot `keccak256("crest.vault.pending.set")`. After a payment with a fee, the token gets a yes for that one hash. An honest token asks only for digests it builds from typed data, so reaching the slot needs a keccak preimage | Info: moves nothing; every other hash gets a no (fuzzed, 256 runs) | Open, for the next contract version: key the approval as `keccak256(abi.encode(TAG, digest))`, or refuse the two fee slots in the token's branch. A change ships in a new factory | `test_finding_RT2_theTokenGetsAYesForTheFeesPendingFlag`, `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash` |
-| V-I1 | `windowEnd` is 40 bits. Within one period of 2^40 s (the year 36,812) a window's end no longer fits, the stored end wraps, and every payment starts a fresh window | Info: unreachable on any chain for about 34,000 years | Open; the next version may store the window's index or a 64-bit end | `test_observe_theWindowEndWrapsOnlyNearTheYear36812` |
+| RT-2 | The vault's ERC-1271 answer to the token reads any transient slot that holds 1, and the fee's pending flag sits in the same transient space at the fixed slot `keccak256("crest.vault.pending.set")`. After a payment with a fee, the token gets a yes for that one hash. An honest token asks only for digests it builds from typed data, so reaching the slot needs a keccak preimage | Info: moves nothing; every other hash gets a no (fuzzed, 256 runs) | Decided: fixed in the next contract version, on its own branch, and not in the build this page scopes (Rafa, 2026-11-25). The fix keys the approval as `keccak256(abi.encode(TAG, digest))`, or refuses the two fee slots in the token's branch; it ships in a new factory | `test_finding_RT2_theTokenGetsAYesForTheFeesPendingFlag`, `testFuzz_attack_afterAFeePayment_theTokenGetsANoForEveryOtherHash` |
+| V-I1 | `windowEnd` is 40 bits. Within one period of 2^40 s (the year 36,812) a window's end no longer fits, the stored end wraps, and every payment starts a fresh window | Info: unreachable on any chain for about 34,000 years | Decided: not fixed; a known Info item (Rafa, 2026-11-25) | `test_observe_theWindowEndWrapsOnlyNearTheYear36812` |
 | RT-O1 | Filling a child vault and returning the money, day after day, spends the root's and every ancestor grant's lifetime with no money leaving: fills count, returns give nothing back. A sibling agent is then refused until the principal raises the limit | Info: the agent's own limits bound it; one line for the owner's guide | Acknowledged by the maintainer (Rafa, 2026-11-25); no change | `test_observe_aFillAndReturnLoop_burnsTheRootsLifetime_withoutPayingAnyone` |
 | RT-O2 | Once a deal's commitment ends, the vault forgets it, and a live grant's yes on that deal's terms or agreement passes the dry run again. Holdback never funds a deal twice (`WrongStage`) | Info | Acknowledged by the maintainer (Rafa, 2026-11-25); no change | `test_attack_anEndedDealsTermsSignedAgainByASibling_fundNothing_refused` |
 | RT-O3 | A key named in a `cancelSignedGrant` record has `authorityOver` that closed record and can nest further records under it: `Closed` events, and IDs no grant can ever use. It cannot pay, grant, widen, resume or sign | Info: off-chain indexers should expect it | Acknowledged by the maintainer (Rafa, 2026-11-25); no change | `test_attack_aKeyNamedInATombstone_gainsNoPowerToPayDelegateOrSign_refused` |
 | RT-O4 | A note is carried byte for byte, hidden Unicode tag characters included, and grants nothing. Off-chain tools that show notes to a model must treat them as untrusted text | Info | Acknowledged by the maintainer (Rafa, 2026-11-25); no change | `test_attack_aNoteWithHiddenUnicodeTags_isCarriedVerbatim_andGrantsNothing_refused` |
 
 **What the red team tried that held** [measured, 13 tests]: every route a hijacked agent has to its own key with a list on its grant; a clone of the implementation made outside the factory, naming the real vault as its parent; a second Holdback rules deployment whose commitment IDs collide with the first's; a key moved mid-flight, with deals open in a child and in a grandchild vault; a child vault's deal at the escrow's expiry; and the token's answer for every other hash after a fee payment. It found by reading [inferred] that every external call made during `charge`, `fundChild` and `isValidSignature` goes to a view function and compiles to `STATICCALL`, so nothing re-enters between a charge and its pull.
+
+**A second review from another model family** (DeepSeek, 2026-11-25) read `src/` at `main` `7fbeed4`. The coordinator verified each of its 194 claims against the code; the verification table is kept privately. One claim stands as an Info finding and two as documentation points. None moves money outside a deal's terms, past a limit or out of a hold [documented: the verification; measured: the tests below].
+
+| ID | Finding | Severity | Status | Test |
+| --- | --- | --- | --- | --- |
+| SF-1 | `reclaim` asks for an enabled module (`CrestVault.sol:322`), so switching a module off while it has funded holds also shuts the vault's own escrow reclaim through it until the principal enables it again. Holdback's own timeouts still return every hold to the vault (`reclaim` at the delivery deadline, the fallback turn and the default), and the module still ends its commitments | Info | Documented: known limit K-18, and one line for the owner's guide | `review/SecondFamily.t.sol` `test_observe_SF1_aDisabledModule_shutsTheVaultsOwnReclaim_andHoldbacksTimeoutsStillReturnTheHolds` |
+| SF-2 | This page's V4 said the top principal's exemption from the delegation switch applies to grants by transaction. It applies to its signed grants too, as `ICrestVault.sol` and design section 2 say | Documentation | Corrected here and in the design record (section 2, open item 13) | `test_observe_SF2_theTopPrincipalsSlips_landBelowAGrantWhoseDelegationIsOff` |
+| SF-3 | Design section 18 said a narrowing binds every grant below from the next payment. A child vault keeps spending money filled before the narrowing; a pause on the parent grant stops it and a take-back returns the rest | Documentation | Corrected in design section 18; known limit K-19 | `test_observe_SF3_aChildSpendsAFillMadeBeforeANarrowing_untilAPauseOrATakeBack` |
+
+One claim was corrected by the verification and needs no change: the Holdback module's `uint120` cast of a hold's amount truncates rather than reverts, and Holdback then refuses the hold (`Unrepresentable`), so it fails safely (`redteam/Approval.t.sol` `test_attack_termsWhoseHoldTheModuleTruncates_failClosed`).
 
 ## 8. Known limits: do not report these as new
 
@@ -339,6 +350,8 @@ Each is documented with its reason and its bound. A scan finding that only resta
 | K-15 | A slip's holder can land it before a cancel lands | design, section 17 | Short deadlines; a close still stops the landed grant |
 | K-16 | Holdback's own known issues | Holdback's `docs/audit/known-issues.md` | As recorded there |
 | K-17 | A grant with no merchant list anywhere on its path pays whatever counterparty the agent's terms name, the agent's own key included (RT-1). A list is optional, with no default (Rafa, 2026-11-25) | section 7, RT-1; design, section 18 | The grant's period and lifetime limits, and every limit above it; a principal who wants the agent's own keys excluded sets a list |
+| K-18 | With a module switched off, the vault's own escrow `reclaim` through it is refused (`ModuleNotEnabled`) until the principal enables it again (SF-1) | section 7, SF-1 | None lost: Holdback's own timeouts return every hold to the vault, and the module ends its commitments |
+| K-19 | A narrowing does not bind a child vault spending money filled before it: a child's payment checks the parent path's state, expiry, per-payment limit and lists, not its period or lifetime counters (SF-3) | section 7, SF-3; design, section 18 | What was filled; a pause on the parent grant stops the child at once, and a take-back returns the rest |
 
 ## 9. Before submission
 
@@ -347,12 +360,13 @@ Each is documented with its reason and its bound. A scan finding that only resta
 - 529 tests pass, 50 of them new, and the deep campaign passes 38 of 38. The new suites catch all 12 planted mutants.
 - Static analysis is triaged, and the known limits are listed so the scan can tell them from new findings.
 
-**Decided:** RT-1's default. A merchant list on an agent's grant stays optional, and neither onboarding nor the deploy script sets one by default (Rafa, 2026-11-25). The behaviour is by design ("no list means anyone"); the claim that contradicted it is corrected, and K-17 records the limit.
+**Decided:**
+- RT-1's default. A merchant list on an agent's grant stays optional, and neither onboarding nor the deploy script sets one by default (Rafa, 2026-11-25). The behaviour is by design ("no list means anyone"); the claim that contradicted it is corrected, and K-17 records the limit.
+- RT-2 and V-I1 (Rafa, 2026-11-25). RT-2 is fixed in the next contract version, on its own branch, after this build is tagged as the stable one; V-I1 stays a known Info item. The scan reads this build with both recorded here.
+- The second review from another model family ran on 2026-11-25 (section 7, SF-1 to SF-3), and its documentation points are corrected.
 
 **Not ready, or the maintainer's to decide:**
 
-1. **RT-2 and V-I1** wait for the next contract version. Either can be fixed before the scan, as a new factory with a review and a red team, or recorded for the scan as known Info items. This page records them.
-2. **Open items 12, 13 and 14** carry recommendations from 2026-11-24 (document, no change) that the maintainer has not yet confirmed.
-3. **A second review from another model family** has not run. Both earlier reports recommend one for sections 18 and 19.
-4. **Which build the scan reads.** `main` (this page's scope) is not the build deployed on Sepolia (`36485df`). Scanning `main` matches Holdback's practice of having the scan read the next build.
-5. **The fork suites** were not rerun in this pass, because it touched no RPC. Run them once against a Sepolia fork before the submission.
+1. **Open items 12, 13 and 14** carry recommendations from 2026-11-24 (document, no change) that the maintainer has not yet confirmed.
+2. **Which build the scan reads.** `main` (this page's scope) is not the build deployed on Sepolia (`36485df`). Scanning `main` matches Holdback's practice of having the scan read the next build.
+3. **The fork suites** were not rerun in this pass, because it touched no RPC. Run them once against a Sepolia fork before the submission.
