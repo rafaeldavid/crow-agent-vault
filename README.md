@@ -16,6 +16,7 @@ Crow Vault knows how to pay; it knows nothing of what it pays for. A module per 
 - **A known limit of this version.** The agent's key is the deal's buyer, and the vault only pays. So after every stop (a pause, a close, an empty vault), that key can still accept early a funded hold whose merchant has signed a delivery. A stop prevents new payments; it does not reach a deal already funded. The vault-as-buyer build closes this limit. It ships as a new factory.
 
 - `docs/design.md`: the design record and the decisions still open.
+- `docs/audit/readiness.md`: the scope, trust model and invariants for an outside scan, each invariant mapped to its tests, with the recorded runs, the static analysis and the known limits.
 - `docs/research/`: the research behind it.
 - `src/`: the vault, its factory and the Holdback module, with descriptions in their interface files.
 - `test/`: the tests, attack tests included: each limit is proven by an attempt to break it that fails.
