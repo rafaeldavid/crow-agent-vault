@@ -647,7 +647,7 @@ So this build's deploy needs about 49.1 million gas. Estimate each creation on t
 - **The rerun** of the two-model test with the vault as the buyer spends model credit, so it waits for the maintainer's go.
 - **The Sepolia deploy of this build** is a new factory and module at new addresses. Vaults from an earlier factory keep the agent's key as the buyer.
 
-### 20. The next version (branch `next-version`; not deployed)
+### 20. The next version (merged as `8decee3`; deployed on Sepolia on 2026-11-26)
 
 The stable build is the tag `vault-stable-1` (`main` `7fbeed4`, 2026-11-25), the build an outside scan reads (`docs/audit/readiness.md`). Fixes found after it go to the branch `next-version` and ship in a new factory at a new address. Its deploy waits for the maintainer (Rafa, 2026-11-25).
 

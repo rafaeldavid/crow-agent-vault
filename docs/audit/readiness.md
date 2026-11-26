@@ -32,7 +32,7 @@ Labels: **measured** (produced by the named command or test), **documented** (st
 - `script/Deploy.s.sol` and `script/sourcify-verify.mjs`: the deploy and its checks. `test/Deploy.t.sol` and the fork suites test them. They hold no funds. A scan may read them second.
 - `client/`: the off-chain thin client.
 
-**Which build is deployed.** Sepolia runs an earlier build, from commit `36485df`, since 2026-11-19 (`deployments/11155111.json`, `deployments/README.md`). It takes the agent's key as the buyer. The scan reads `main`, whose module takes only the vault as the buyer (`VAULT_IS_BUYER`). That build is not deployed, and its deploy waits for the maintainer [documented: `README.md`; `docs/design.md`, section 19, "What waits"].
+**Which build is deployed.** Since 2026-11-26 Sepolia runs a new factory from `main` at `8decee3`: this page's build with the next version's fixes, RT-2 and SF-4 (`deployments/11155111.json`, `deployments/README.md`). The earlier factory from `36485df`, deployed on 2026-11-19, stays for the vaults made from it; it takes the agent's key as the buyer. The scan reads `main`, whose module takes only the vault as the buyer (`VAULT_IS_BUYER`). That build is not deployed, and its deploy waits for the maintainer [documented: `README.md`; `docs/design.md`, section 19, "What waits"].
 
 ## 2. Trust model and roles
 
@@ -376,5 +376,5 @@ Each is documented with its reason and its bound. A scan finding that only resta
 **Not ready, or the maintainer's to decide:**
 
 1. **Open items 12, 13 and 14** carry recommendations from 2026-11-24 (document, no change) that the maintainer has not yet confirmed.
-2. **Which build the scan reads.** `main` (this page's scope) is not the build deployed on Sepolia (`36485df`). Scanning `main` matches Holdback's practice of having the scan read the next build.
+2. **Which build the scan reads.** This page's scope is the stable tag `vault-stable-1`. Sepolia now runs `8decee3`, which is that build plus RT-2 and SF-4. Decide whether the scan reads the tag or `8decee3`, and this page follows. Scanning `main` matches Holdback's practice of having the scan read the next build.
 3. **The fork suites** were not rerun in this pass, because it touched no RPC. Run them once against a Sepolia fork before the submission.
